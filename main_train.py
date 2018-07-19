@@ -8,6 +8,8 @@ from models.enc_Luong import *
 from models.enc_PTRUNK import *
 from models.Mem2Seq import *
 
+import nsml
+
 BLEU = False
 
 if (args['decoder'] == "Mem2Seq"):
@@ -29,7 +31,7 @@ else:
 
 # Configure models
 avg_best,cnt,acc = 0.0,0,0.0
-cnt_1 = 0   
+cnt_1 = 0
 ### LOAD DATA
 train, dev, test, testOOV, lang, max_len, max_r = prepare_data_seq(args['task'],batch_size=int(args['batch']),shuffle=True)
 

@@ -8,6 +8,7 @@ from models.enc_Luong import *
 from models.enc_PTRUNK import *
 from models.Mem2Seq import *
 
+
 '''
 python3 main_test.py -dec= -path= -bsz= -ds=
 '''
@@ -32,10 +33,11 @@ else:
         print("You need to provide the --dataset information")
 
 # Configure models
-directory = args['path'].split("/")
-task = directory[2].split('HDD')[0]
-HDD = directory[2].split('HDD')[1].split('BSZ')[0]
-L = directory[2].split('L')[1].split('lr')[0]
+directory = args['path'].split("\\")
+print(directory)
+task = directory[-1].split('HDD')[0]
+HDD = directory[-1].split('HDD')[1].split('BSZ')[0]
+L = directory[-1].split('L')[1].split('lr')[0]
 
 train, dev, test, testOOV, lang, max_len, max_r = prepare_data_seq(task, batch_size=int(args['batch']))
 

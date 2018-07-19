@@ -80,18 +80,22 @@ def moses_multi_bleu(hypotheses, references, lowercase=False):
         metrics_dir = os.path.dirname(os.path.realpath(__file__))
         bin_dir = os.path.abspath(os.path.join(metrics_dir, "..", "..", "bin"))
         multi_bleu_path = os.path.join(bin_dir, "tools/multi-bleu.perl")
+        print(multi_bleu_path)
 
 
     # Dump hypotheses and references to tempfiles
-    hypothesis_file = tempfile.NamedTemporaryFile()
+    hypothesis_file = tempfile.NamedTemporaryFile(delete=False)
     hypothesis_file.write("\n".join(hypotheses).encode("utf-8"))
     hypothesis_file.write(b"\n")
     hypothesis_file.flush()
-    reference_file = tempfile.NamedTemporaryFile()
+    reference_file = tempfile.NamedTemporaryFile(delete=False)
     reference_file.write("\n".join(references).encode("utf-8"))
     reference_file.write(b"\n")
     reference_file.flush()
 
+    # Close temp files
+    hypothesis_file.close()
+    reference_file.close()
 
      # Calculate BLEU using multi-bleu script
     with open(hypothesis_file.name, "r") as read_pred:
@@ -100,7 +104,7 @@ def moses_multi_bleu(hypotheses, references, lowercase=False):
             bleu_cmd += ["-lc"]
         bleu_cmd += [reference_file.name]
         try:
-            bleu_out = subprocess.check_output(bleu_cmd, stdin=read_pred, stderr=subprocess.STDOUT)
+            bleu_out = subprocess.check_output(bleu_cmd, stdin=read_pred, stderr=subprocess.STDOUT, shell=True)
             bleu_out = bleu_out.decode("utf-8")
             bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
             bleu_score = float(bleu_score)
@@ -110,7 +114,6 @@ def moses_multi_bleu(hypotheses, references, lowercase=False):
                 print(error.output)
                 bleu_score = np.float32(0.0)
 
-    # Close temp files
-    hypothesis_file.close()
-    reference_file.close()
+    os.remove(hypothesis_file.name)
+    os.remove(reference_file.name)
     return bleu_score

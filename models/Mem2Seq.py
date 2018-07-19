@@ -1,14 +1,17 @@
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
 from torch import optim
+
 import torch.nn.functional as F
 from utils.masked_cross_entropy import *
 from utils.config import *
 import random
 import numpy as np
 import datetime
+
 from utils.measures import wer, moses_multi_bleu
 import matplotlib
 # matplotlib.use('Agg')
@@ -129,7 +132,7 @@ class Mem2Seq(nn.Module):
                 all_decoder_outputs_ptr[t] = decoder_ptr
                 ## get the correspective word in input
                 top_ptr_i = torch.gather(input_batches[:,:,0],0,Variable(toppi.view(1, -1)))
-                next_in = [top_ptr_i.squeeze()[i].data[0] if(toppi.squeeze()[i] < input_lengths[i]-1) else topvi.squeeze()[i] for i in range(batch_size)]
+                next_in = [top_ptr_i.squeeze()[i].data.item() if(toppi.squeeze()[i] < input_lengths[i]-1) else topvi.squeeze()[i] for i in range(batch_size)]
                 decoder_input = Variable(torch.LongTensor(next_in)) # Chosen word is next input
                 if USE_CUDA: decoder_input = decoder_input.cuda()
                   
@@ -149,14 +152,14 @@ class Mem2Seq(nn.Module):
         loss.backward()
         
         # Clip gradient norms
-        ec = torch.nn.utils.clip_grad_norm(self.encoder.parameters(), clip)
-        dc = torch.nn.utils.clip_grad_norm(self.decoder.parameters(), clip)
+        ec = torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), clip)
+        dc = torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), clip)
         # Update parameters with optimizers
         self.encoder_optimizer.step()
         self.decoder_optimizer.step()
-        self.loss += loss.data[0]
-        self.loss_ptr += loss_Ptr.data[0]
-        self.loss_vac += loss_Vocab.data[0]
+        self.loss += loss.data.item()
+        self.loss_ptr += loss_Ptr.data.item()
+        self.loss_vac += loss_Vocab.data.item()
         
     def evaluate_batch(self,batch_size,input_batches, input_lengths, target_batches, target_lengths, target_index,target_gate,src_plain, conv_seqs, conv_lengths):  
         # Set to not-training mode to disable dropout
@@ -196,7 +199,7 @@ class Mem2Seq(nn.Module):
             all_decoder_outputs_ptr[t] = decoder_ptr
             topp, toppi = decoder_ptr.data.topk(1)
             top_ptr_i = torch.gather(input_batches[:,:,0],0,Variable(toppi.view(1, -1)))    
-            next_in = [top_ptr_i.squeeze()[i].data[0] if(toppi.squeeze()[i] < input_lengths[i]-1) else topvi.squeeze()[i] for i in range(batch_size)]
+            next_in = [top_ptr_i.squeeze()[i].data.item() if(toppi.squeeze()[i] < input_lengths[i]-1) else topvi.squeeze()[i] for i in range(batch_size)]
 
             decoder_input = Variable(torch.LongTensor(next_in)) # Chosen word is next input
             if USE_CUDA: decoder_input = decoder_input.cuda()
@@ -212,7 +215,8 @@ class Mem2Seq(nn.Module):
                     if ind == EOS_token:
                         temp.append('<EOS>')
                     else:
-                        temp.append(self.lang.index2word[ind])
+                        temp.append(self.lang.index2word[ind.item()])
+
                     from_which.append('v')
             decoded_words.append(temp)
             self.from_whichs.append(from_which)
@@ -255,17 +259,18 @@ class Mem2Seq(nn.Module):
         hyp_s = ""
         dialog_acc_dict = {}
         pbar = tqdm(enumerate(dev),total=len(dev))
-        for j, data_dev in pbar: 
+
+        for j, data_dev in pbar:
             if args['dataset']=='kvr':
                 words = self.evaluate_batch(len(data_dev[1]),data_dev[0],data_dev[1],
-                                    data_dev[2],data_dev[3],data_dev[4],data_dev[5],data_dev[6], data_dev[-2], data_dev[-1]) 
+                                    data_dev[2],data_dev[3],data_dev[4],data_dev[5],data_dev[6], data_dev[-2], data_dev[-1])
             else:
                 words = self.evaluate_batch(len(data_dev[1]),data_dev[0],data_dev[1],
-                        data_dev[2],data_dev[3],data_dev[4],data_dev[5],data_dev[6], data_dev[-4], data_dev[-3])          
+                        data_dev[2],data_dev[3],data_dev[4],data_dev[5],data_dev[6], data_dev[-4], data_dev[-3])
             # acc_P += acc_ptr
             # acc_V += acc_vac
             acc=0
-            w = 0 
+            w = 0
             temp_gen = []
 
             for i, row in enumerate(np.transpose(words)):
@@ -274,21 +279,24 @@ class Mem2Seq(nn.Module):
                     if e== '<EOS>': break
                     else: st+= e + ' '
                 temp_gen.append(st)
-                correct = data_dev[7][i]  
-                ### compute F1 SCORE  
+                try:
+                    correct = data_dev[7][i]
+                except:
+                    correct = ' '
+                ### compute F1 SCORE
                 if args['dataset']=='kvr':
                     f1_true,f1_pred = computeF1(data_dev[8][i],st.lstrip().rstrip(),correct.lstrip().rstrip())
                     microF1_TRUE += f1_true
                     microF1_PRED += f1_pred
                     f1_true,f1_pred = computeF1(data_dev[9][i],st.lstrip().rstrip(),correct.lstrip().rstrip())
                     microF1_TRUE_cal += f1_true
-                    microF1_PRED_cal += f1_pred 
+                    microF1_PRED_cal += f1_pred
                     f1_true,f1_pred = computeF1(data_dev[10][i],st.lstrip().rstrip(),correct.lstrip().rstrip())
                     microF1_TRUE_nav += f1_true
-                    microF1_PRED_nav += f1_pred 
-                    f1_true,f1_pred = computeF1(data_dev[11][i],st.lstrip().rstrip(),correct.lstrip().rstrip()) 
+                    microF1_PRED_nav += f1_pred
+                    f1_true,f1_pred = computeF1(data_dev[11][i],st.lstrip().rstrip(),correct.lstrip().rstrip())
                     microF1_TRUE_wet += f1_true
-                    microF1_PRED_wet += f1_pred  
+                    microF1_PRED_wet += f1_pred
                 elif args['dataset']=='babi' and int(self.task)==6:
                     f1_true,f1_pred = computeF1(data_dev[-2][i],st.lstrip().rstrip(),correct.lstrip().rstrip())
                     microF1_TRUE += f1_true
@@ -316,7 +324,7 @@ class Mem2Seq(nn.Module):
                 hyp_s+=str(st.lstrip().rstrip()) + "\n"
 
             acc_avg += acc/float(len(data_dev[1]))
-            wer_avg += w/float(len(data_dev[1]))            
+            wer_avg += w/float(len(data_dev[1]))
             pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),
                                                                     wer_avg/float(len(dev))))
 
@@ -336,13 +344,13 @@ class Mem2Seq(nn.Module):
         elif args['dataset']=='babi' and int(self.task)==6 :
             logging.info("F1 SCORE:\t"+str(f1_score(microF1_TRUE, microF1_PRED, average='micro')))
 
-              
-        bleu_score = moses_multi_bleu(np.array(hyp), np.array(ref), lowercase=True) 
-        logging.info("BLEU SCORE:"+str(bleu_score))     
-        if (BLEU):                                                               
+
+        bleu_score = moses_multi_bleu(np.array(hyp), np.array(ref), lowercase=True)
+        logging.info("BLEU SCORE:"+str(bleu_score))
+        if (BLEU):
             if (bleu_score >= avg_best):
                 self.save_model(str(self.name)+str(bleu_score))
-                logging.info("MODEL SAVED")  
+                logging.info("MODEL SAVED")
             return bleu_score
         else:
             acc_avg = acc_avg/float(len(dev))

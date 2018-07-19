@@ -108,12 +108,11 @@ def collate_fn(data):
     return src_seqs, src_lengths, trg_seqs, trg_lengths, ind_seqs, src_plain, trg_plain
 
 
-    
+# ['sit', 'down', '!', '$$$$'] ['asseyez-vous', '!'] [3, 2]
 def read_langs(file_name, max_line = None):
     logging.info(("Reading lines from {}".format(file_name)))
     data=[]
-
-    with open(file_name) as fin:
+    with open(file_name, encoding='utf-8') as fin:
         cnt_ptr = 0
         cnt_voc = 0
         max_r_len = 0
@@ -121,14 +120,15 @@ def read_langs(file_name, max_line = None):
             line=line.strip()
             if line:
                 eng, fre = line.split('\t')
-                eng, fre = word_tokenize(eng.lower()), word_tokenize(fre.lower())     
+                eng, fre = word_tokenize(eng.lower()), word_tokenize(fre.lower())
                 ptr_index = []
                 for key in fre:
                     index = [loc for loc, val in enumerate(eng) if (val[0] == key)]
+
                     if (index):
                         index = max(index)
                         cnt_ptr +=1
-                    else: 
+                    else:
                         index = len(eng) ## sentinel 
                         cnt_voc +=1             
                     ptr_index.append(index)
