@@ -13,6 +13,8 @@ import nltk
 from sklearn.metrics import f1_score
 from itertools import chain
 
+import nsml
+
 class VanillaSeqToSeq(nn.Module):
     def __init__(self,hidden_size,max_len,max_r,lang,path,task,lr=0.01,n_layers=1, dropout=0.1):
         super(VanillaSeqToSeq, self).__init__()
@@ -169,7 +171,7 @@ class VanillaSeqToSeq(nn.Module):
             topv, topi = decoder_vacab.data.topk(1)
             decoder_input = Variable(topi.view(-1))
     
-            decoded_words.append(['<EOS>'if ni == EOS_token else self.lang.index2word[ni] for ni in topi.view(-1)])
+            decoded_words.append(['<EOS>'if ni.item() == EOS_token else self.lang.index2word[ni.item()] for ni in topi.view(-1)])
             # Next input is chosen word
             if USE_CUDA: decoder_input = decoder_input.cuda()
 
@@ -179,7 +181,7 @@ class VanillaSeqToSeq(nn.Module):
         
         return decoded_words
 
-    def evaluate(self,dev,avg_best,BLEU=False):
+    def evaluate(self,dev,avg_best,epoch,BLEU=False):
         logging.info("STARTING EVALUATION")
         acc_avg = 0.0
         wer_avg = 0.0
@@ -192,7 +194,10 @@ class VanillaSeqToSeq(nn.Module):
         hyp = []
         ref_s = ""
         hyp_s = ""
-        pbar = tqdm(enumerate(dev),total=len(dev))
+        if nsml.IS_ON_NSML:
+            pbar = enumerate(dev)
+        else:
+            pbar = tqdm(enumerate(dev),total=len(dev))
         for j, data_dev in pbar: 
             words = self.evaluate_batch(len(data_dev[1]),data_dev[0],data_dev[1],data_dev[2])             
             acc=0
@@ -241,7 +246,8 @@ class VanillaSeqToSeq(nn.Module):
 
             acc_avg += acc/float(len(data_dev[1]))
             wer_avg += w/float(len(data_dev[1]))
-            pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),
+            if not nsml.IS_ON_NSML:
+                pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),
                                                                     wer_avg/float(len(dev))))
         if(len(data_dev)>10):
             logging.info("F1 SCORE:\t"+str(f1_score(microF1_TRUE, microF1_PRED, average='micro')))
@@ -260,8 +266,11 @@ class VanillaSeqToSeq(nn.Module):
         else:
             acc_avg = acc_avg/float(len(dev))
             if (acc_avg >= avg_best):
-                self.save_model(str(self.name)+str(acc_avg))
-                logging.info("MODEL SAVED")
+                if nsml.IS_ON_NSML:
+                    nsml.save(epoch)
+                else:
+                    self.save_model(str(self.name) + str(acc_avg))
+                    logging.info("MODEL SAVED")
             return acc_avg
 
 def computeF1(entity,st,correct):

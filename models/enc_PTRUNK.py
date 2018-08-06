@@ -12,6 +12,7 @@ from utils.measures import wer,moses_multi_bleu
 from tqdm import tqdm
 from sklearn.metrics import f1_score
 import math
+import nsml
 
 class PTRUNK(nn.Module):
     def __init__(self,hidden_size,max_len,max_r,lang,path,task,lr,n_layers, dropout):
@@ -116,8 +117,8 @@ class PTRUNK(nn.Module):
                     decoder_input, decoder_hidden, encoder_outputs)
 
                 all_decoder_outputs_vocab[t] = decoder_vacab
-                all_decoder_outputs_ptr[t] = decoder_ptr
-                all_decoder_outputs_gate[t] = gate
+                all_decoder_outputs_ptr[t] = decoder_ptr.transpose(0,1)
+                all_decoder_outputs_gate[t] = gate.squeeze(1)
                 decoder_input = target_batches[t] # Next input is current target
                 if USE_CUDA: decoder_input = decoder_input.cuda()
                 
@@ -126,8 +127,8 @@ class PTRUNK(nn.Module):
                 decoder_ptr,decoder_vacab,gate,decoder_hidden = self.decoder(
                     decoder_input, decoder_hidden, encoder_outputs)
                 all_decoder_outputs_vocab[t] = decoder_vacab
-                all_decoder_outputs_ptr[t] = decoder_ptr
-                all_decoder_outputs_gate[t] = gate
+                all_decoder_outputs_ptr[t] = decoder_ptr.transpose(0,1) #
+                all_decoder_outputs_gate[t] = gate.squeeze(1) #
                 topv, topvi = decoder_vacab.data.topk(1)
                 topp, toppi = decoder_ptr.data.topk(1)
                 ## get the correspective word in input
@@ -194,8 +195,8 @@ class PTRUNK(nn.Module):
             decoder_ptr,decoder_vacab,gate,decoder_hidden  = self.decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
             all_decoder_outputs_vocab[t] = decoder_vacab
-            all_decoder_outputs_ptr[t] = decoder_ptr
-            all_decoder_outputs_gate[t] = gate
+            all_decoder_outputs_ptr[t] = decoder_ptr.transpose(0,1)
+            all_decoder_outputs_gate[t] = gate.squeeze(1)
 
             topv, topvi = decoder_vacab.data.topk(1)
             topp, toppi = decoder_ptr.data.topk(1)
@@ -217,7 +218,7 @@ class PTRUNK(nn.Module):
                     if ind == EOS_token:
                         temp.append('<EOS>')
                     else:
-                        temp.append(self.lang.index2word[ind])
+                        temp.append(self.lang.index2word[ind.item()])
             decoded_words.append(temp)
 
         # Set back to training mode
@@ -227,7 +228,7 @@ class PTRUNK(nn.Module):
         return decoded_words
 
 
-    def evaluate(self,dev,avg_best,BLEU=False):
+    def evaluate(self,dev,avg_best,epoch = 0, BLEU=False):
         logging.info("STARTING EVALUATION")
         acc_avg = 0.0
         wer_avg = 0.0
@@ -240,7 +241,11 @@ class PTRUNK(nn.Module):
         hyp = []
         ref_s = ""
         hyp_s = ""
-        pbar = tqdm(enumerate(dev),total=len(dev))
+        if nsml.IS_ON_NSML:
+            pbar = enumerate(dev)
+        else:
+            pbar = tqdm(enumerate(dev),total=len(dev))
+        print_num = 5
         for j, data_dev in pbar: 
             words = self.evaluate_batch(len(data_dev[1]),data_dev[0],data_dev[1],data_dev[2],data_dev[3],data_dev[4],data_dev[5],data_dev[6])            
             acc=0
@@ -275,6 +280,12 @@ class PTRUNK(nn.Module):
                 
                 if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
                     acc+=1
+                else:
+                    if print_num > 0:
+                        print("Correct:"+str(correct.lstrip().rstrip()))
+                        print("X\tPredict:"+str(st.lstrip().rstrip()))
+                        print_num -= 1
+
                 w += wer(correct.lstrip().rstrip(),st.lstrip().rstrip())
                 ref.append(str(correct.lstrip().rstrip()))
                 hyp.append(str(st.lstrip().rstrip()))
@@ -283,7 +294,8 @@ class PTRUNK(nn.Module):
 
             acc_avg += acc/float(len(data_dev[1]))
             wer_avg += w/float(len(data_dev[1]))
-            pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),wer_avg/float(len(dev))))
+            if not nsml.IS_ON_NSML:
+                pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),wer_avg/float(len(dev))))
         if(len(data_dev)>10):
             logging.info("F1 SCORE:\t"+str(f1_score(microF1_TRUE, microF1_PRED, average='micro')))
             logging.info("F1 CAL:\t"+str(f1_score(microF1_TRUE_cal, microF1_PRED_cal, average='micro')))
@@ -300,9 +312,13 @@ class PTRUNK(nn.Module):
             return bleu_score
         else:              
             acc_avg = acc_avg/float(len(dev))
+            logging.info("ACC : {}".format(str(acc_avg)))
             if (acc_avg >= avg_best):
-                self.save_model(str(self.name)+str(acc_avg))
-                logging.info("MODEL SAVED")
+                if nsml.IS_ON_NSML:
+                    nsml.save(epoch)
+                else:
+                    self.save_model(str(self.name) + str(acc_avg))
+                    logging.info("MODEL SAVED")
             return acc_avg
 
 def computeF1(entity,st,correct):
@@ -322,9 +338,9 @@ class EncoderRNN(nn.Module):
         self.dropout = dropout       
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.embedding_dropout = nn.Dropout(dropout) 
-        self.lstm = nn.LSTM(hidden_size, hidden_size, n_layers, dropout=self.dropout)
+        self.cell = nn.GRU(hidden_size, hidden_size, n_layers, dropout=self.dropout)
         if USE_CUDA:
-            self.lstm = self.lstm.cuda() 
+            self.cell = self.cell.cuda()
             self.embedding_dropout = self.embedding_dropout.cuda()
             self.embedding = self.embedding.cuda() 
 
@@ -346,7 +362,7 @@ class EncoderRNN(nn.Module):
         if input_lengths:
             embedded = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=False)
         
-        outputs, hidden = self.lstm(embedded, hidden)
+        outputs, hidden = self.cell(embedded, hidden)
         if input_lengths:
             outputs, _ = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=False)   
         
@@ -361,11 +377,11 @@ class PtrDecoderRNN(nn.Module):
         self.dropout = dropout
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.embedding_dropout = nn.Dropout(dropout)
-        self.lstm = nn.LSTM(2*hidden_size, hidden_size, n_layers, dropout=dropout)
+        self.cell = nn.LSTM(2*hidden_size, hidden_size, n_layers, dropout=dropout)
         self.W1 = nn.Linear(2*hidden_size, hidden_size)
-        self.v = nn.Parameter(torch.rand(hidden_size))
-        stdv = 1. / math.sqrt(self.v.size(0))
-        self.v.data.normal_(mean=0, std=stdv)
+        v = torch.rand(hidden_size)
+        stdv = 1. / math.sqrt(v.size(0))
+        v = v.data.normal_(mean=0, std=stdv)
         self.concat = nn.Linear(hidden_size * 2, hidden_size)  
         self.U = nn.Linear(hidden_size, output_size)
         self.W = nn.Linear(hidden_size, 1)
@@ -373,12 +389,13 @@ class PtrDecoderRNN(nn.Module):
         if USE_CUDA:
             self.embedding = self.embedding.cuda()
             self.embedding_dropout = self.embedding_dropout.cuda()
-            self.lstm = self.lstm.cuda()
+            self.cell = self.cell.cuda()
             self.W1 = self.W1.cuda() 
-            self.v = self.v.cuda() 
+            v = v.cuda()
             self.U = self.U.cuda() 
-            self.W = self.W.cuda() 
+            self.W = self.W.cuda()
 
+        self.v = nn.Parameter(v)
     def forward(self, input_seq, last_hidden, encoder_outputs):
         # Note: we run this one step at a time     
         # Get the embedding of the current input word (last output word)
@@ -404,7 +421,7 @@ class PtrDecoderRNN(nn.Module):
 
         # Combine embedded input word and attended context, run through RNN
         rnn_input = torch.cat((word_embedded, context.squeeze()), 1).unsqueeze(0)
-        output, hidden = self.lstm(rnn_input, last_hidden)
+        output, hidden = self.cell(rnn_input, last_hidden)
     
         p_vacab = self.U(output)
         

@@ -10,6 +10,9 @@ from models.Mem2Seq import *
 
 import nsml
 
+if nsml.IS_ON_NSML:
+    from nsml_helper import bind_model
+
 BLEU = False
 
 if (args['decoder'] == "Mem2Seq"):
@@ -51,11 +54,18 @@ else:
                                     dropout=float(args['drop'])
                                 )
 
-for epoch in range(300):
+if nsml.IS_ON_NSML:
+    bind_model(model)
+
+for epoch in range(100):
     logging.info("Epoch:{}".format(epoch))  
     # Run the train function
-    pbar = tqdm(enumerate(train),total=len(train))
-    for i, data in pbar: 
+    if nsml.IS_ON_NSML:
+        pbar = enumerate(train)
+    else:
+        pbar = tqdm(enumerate(train), total=len(train))
+
+    for i, data in pbar:
         if args['decoder'] == "Mem2Seq":
             if args['dataset']=='kvr':
                 model.train_batch(data[0], data[1], data[2], data[3],data[4],data[5],
@@ -65,11 +75,18 @@ for epoch in range(300):
                             len(data[1]),10.0,0.5, data[-4], data[-3],i==0)
         else:
             model.train_batch(data[0], data[1], data[2], data[3],data[4],data[5],
-                        len(data[1]),10.0,0.5,i==0) 
-        pbar.set_description(model.print_loss())
+                        len(data[1]),10.0,0.5,i==0)
     
     if((epoch+1) % int(args['evalp']) == 0):    
-        acc = model.evaluate(dev,avg_best, BLEU)    
+        acc = model.evaluate(dev,avg_best, epoch, BLEU)
+        acc_test = model.evaluate(test, 1e6, BLEU)
+
+        if args['task'] != 6:
+            acc_oov_test = model.evaluate(testOOV, 1e6, BLEU)
+            print("ACC-DEV,TEST,OOV {} {} {}".format(str(acc),str(acc_test),str(acc_oov_test)))
+        else:
+            print("ACC-DEV,TEST {} {}".format(str(acc), str(acc_test)))
+
         if 'Mem2Seq' in args['decoder']:
             model.scheduler.step(acc)
         if(acc >= avg_best):
@@ -77,7 +94,10 @@ for epoch in range(300):
             cnt=0
         else:
             cnt+=1
-        if(cnt == 5): break
-        if(acc == 1.0): break 
+        #if(acc_test == 1.0): break
+        if nsml.IS_ON_NSML:
+            nsml.save(epoch)
+
+
 
 

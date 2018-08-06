@@ -12,6 +12,8 @@ from utils.measures import wer,moses_multi_bleu
 from sklearn.metrics import f1_score
 import math
 
+import nsml
+
 class LuongSeqToSeq(nn.Module):
     def __init__(self,hidden_size,max_len,max_r,lang,path,task,lr=0.01,n_layers=1, dropout=0.1):
         super(LuongSeqToSeq, self).__init__()
@@ -39,6 +41,7 @@ class LuongSeqToSeq(nn.Module):
         else:
             self.encoder = EncoderRNN(lang.n_words, hidden_size, n_layers,dropout)
             self.decoder = LuongAttnDecoderRNN(hidden_size, lang.n_words, n_layers, dropout)
+
         # Initialize optimizers and criterion
         self.encoder_optimizer = optim.Adam(self.encoder.parameters(), lr=lr)
         self.decoder_optimizer = optim.Adam(self.decoder.parameters(), lr=lr * self.decoder_learning_ratio)
@@ -46,6 +49,7 @@ class LuongSeqToSeq(nn.Module):
         self.loss = 0
         self.loss_vac = 0  
         self.print_every = 1
+
         # Move models to GPU
         if USE_CUDA:
             self.encoder.cuda()
@@ -85,6 +89,7 @@ class LuongSeqToSeq(nn.Module):
         self.encoder_optimizer.zero_grad()
         self.decoder_optimizer.zero_grad()
         loss_Vocab,loss_Ptr,loss_Gate = 0,0,0
+
         # Run words through encoder
         encoder_outputs, encoder_hidden = self.encoder(input_batches, input_lengths)
       
@@ -94,6 +99,7 @@ class LuongSeqToSeq(nn.Module):
 
         max_target_length = max(target_lengths)
         all_decoder_outputs_vocab = Variable(torch.zeros(max_target_length, batch_size, self.output_size))
+
         # Move new Variables to CUDA
         if USE_CUDA:
             all_decoder_outputs_vocab = all_decoder_outputs_vocab.cuda()
@@ -101,13 +107,13 @@ class LuongSeqToSeq(nn.Module):
 
         # Choose whether to use teacher forcing
         use_teacher_forcing = random.random() < teacher_forcing_ratio
-        
-        if use_teacher_forcing:    
+
+        if use_teacher_forcing:
             # Run through decoder one time step at a time
             for t in range(max_target_length):
                 decoder_vacab, decoder_hidden = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
-
                 all_decoder_outputs_vocab[t] = decoder_vacab
+
                 decoder_input = target_batches[t] # Next input is current target
                 if USE_CUDA: decoder_input = decoder_input.cuda()
                 
@@ -116,6 +122,7 @@ class LuongSeqToSeq(nn.Module):
                 decoder_vacab,decoder_hidden = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
                 all_decoder_outputs_vocab[t] = decoder_vacab
                 topv, topi = decoder_vacab.data.topk(1)
+
                 decoder_input = Variable(topi.view(-1)) # Chosen word is next input
                 if USE_CUDA: decoder_input = decoder_input.cuda()
                   
@@ -130,17 +137,19 @@ class LuongSeqToSeq(nn.Module):
         loss.backward()
         
         # Clip gradient norms
-        ec = torch.nn.utils.clip_grad_norm(self.encoder.parameters(), clip)
-        dc = torch.nn.utils.clip_grad_norm(self.decoder.parameters(), clip)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), clip)
+        torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), clip)
+
         # Update parameters with optimizers
         self.encoder_optimizer.step()
         self.decoder_optimizer.step()
-        self.loss += loss.data[0]
+        self.loss += loss.item()
 
     def evaluate_batch(self,batch_size,input_batches, input_lengths, target_batches):  
         # Set to not-training mode to disable dropout
         self.encoder.train(False)
-        self.decoder.train(False)  
+        self.decoder.train(False)
+
         # Run words through encoder
         encoder_outputs, encoder_hidden = self.encoder(input_batches, input_lengths, None)
         # Prepare input and output variables
@@ -163,7 +172,8 @@ class LuongSeqToSeq(nn.Module):
             topv, topi = decoder_vacab.data.topk(1)
             decoder_input = Variable(topi.view(-1))
     
-            decoded_words.append(['<EOS>'if ni == EOS_token else self.lang.index2word[ni] for ni in topi.view(-1)])
+            decoded_words.append(['<EOS>'if ni.item() == EOS_token else self.lang.index2word[ni.item()] for ni in topi.view(-1)])
+
             # Next input is chosen word
             if USE_CUDA: decoder_input = decoder_input.cuda()
         
@@ -174,7 +184,7 @@ class LuongSeqToSeq(nn.Module):
         return decoded_words
 
 
-    def evaluate(self,dev,avg_best,BLEU=False):
+    def evaluate(self,dev,avg_best,epoch=0,BLEU=False):
         logging.info("STARTING EVALUATION")
         acc_avg = 0.0
         wer_avg = 0.0
@@ -187,7 +197,12 @@ class LuongSeqToSeq(nn.Module):
         hyp = []
         ref_s = ""
         hyp_s = ""
-        pbar = tqdm(enumerate(dev),total=len(dev))
+        if nsml.IS_ON_NSML:
+            pbar = enumerate(dev)
+        else:
+            pbar = tqdm(enumerate(dev), total=len(dev))
+
+        print_num = 5
         for j, data_dev in pbar: 
             words = self.evaluate_batch(len(data_dev[1]),data_dev[0],data_dev[1],data_dev[2])             
             acc=0
@@ -223,10 +238,11 @@ class LuongSeqToSeq(nn.Module):
 
                 if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
                     acc+=1
-                # else:
-                #    print("Correct:"+str(correct.lstrip().rstrip()))
-                #    print("\tPredict:"+str(st.lstrip().rstrip()))
-                #    print("\tFrom:"+str(self.from_whichs[:,i]))
+                else:
+                    if print_num > 0:
+                        print("Correct:"+str(correct.lstrip().rstrip()))
+                        print("\tPredict:"+str(st.lstrip().rstrip()))
+                        print_num -= 1
                 w += wer(correct.lstrip().rstrip(),st.lstrip().rstrip())
                 ref.append(str(correct.lstrip().rstrip()))
                 hyp.append(str(st.lstrip().rstrip()))
@@ -235,7 +251,8 @@ class LuongSeqToSeq(nn.Module):
                 
             acc_avg += acc/float(len(data_dev[1]))
             wer_avg += w/float(len(data_dev[1]))
-            pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),
+            if not nsml.IS_ON_NSML:
+                pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),
                                                                     wer_avg/float(len(dev))))
         if(len(data_dev)>10):
             logging.info("F1 SCORE:\t"+str(f1_score(microF1_TRUE, microF1_PRED, average='micro')))
@@ -253,9 +270,13 @@ class LuongSeqToSeq(nn.Module):
             return bleu_score
         else:
             acc_avg = acc_avg/float(len(dev))
+            logging.info("ACC : {}".format(str(acc_avg)))
             if (acc_avg >= avg_best):
-                self.save_model(str(self.name)+str(acc_avg))
-                logging.info("MODEL SAVED")
+                if nsml.IS_ON_NSML:
+                    nsml.save(epoch)
+                else:
+                    self.save_model(str(self.name) + str(acc_avg))
+                    logging.info("MODEL SAVED")
             return acc_avg
 
 def computeF1(entity,st,correct):
@@ -293,9 +314,9 @@ class EncoderRNN(nn.Module):
 
     def forward(self, input_seqs, input_lengths, hidden=None):
         # Note: we run this all at once (over multiple batches of multiple sequences)
-        embedded = self.embedding(input_seqs)
+        embedded = self.embedding(input_seqs) # [input_size, batch, dim]
         embedded = self.embedding_dropout(embedded)
-        hidden = self.get_state(input_seqs)
+        hidden = self.get_state(input_seqs) # tuple( [n_layer, batch, dim],  )
         if input_lengths:
             embedded = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=False)    
         outputs, hidden = self.lstm(embedded, hidden)
@@ -321,18 +342,19 @@ class LuongAttnDecoderRNN(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
         self.W1 = nn.Linear(2*hidden_size, hidden_size)
         # self.v = nn.Linear(hidden_size, 1)
-        self.v = nn.Parameter(torch.rand(hidden_size))
-        stdv = 1. / math.sqrt(self.v.size(0))
-        self.v.data.normal_(mean=0, std=stdv)
-        self.concat = nn.Linear(hidden_size * 2, hidden_size)   
+        v = torch.rand(hidden_size)
+        stdv = 1. / math.sqrt(v.size(0))
+        v = v.data.normal_(mean=0, std=stdv)
+        self.concat = nn.Linear(hidden_size * 2, hidden_size)
         if USE_CUDA:
             self.embedding = self.embedding.cuda()
             self.dropout = self.dropout.cuda()
             self.lstm = self.lstm.cuda()
             self.out = self.out.cuda() 
             self.W1 = self.W1.cuda() 
-            self.v = self.v.cuda() 
+            v = v.cuda()
             self.concat = self.concat.cuda()
+        self.v = nn.Parameter(v)
 
     def forward(self, input_seq, last_hidden, encoder_outputs):
         # Note: we run this one step at a time
@@ -340,23 +362,23 @@ class LuongAttnDecoderRNN(nn.Module):
         # Get the embedding of the current input word (last output word)
         batch_size = input_seq.size(0)
         max_len = encoder_outputs.size(0)
-        encoder_outputs = encoder_outputs.transpose(0,1)
-        embedded = self.embedding(input_seq)
+        encoder_outputs = encoder_outputs.transpose(0,1) # [B*T*H]
+        embedded = self.embedding(input_seq) # [batch, dim]
         embedded = self.dropout(embedded)
         embedded = embedded.view(1, batch_size, self.hidden_size) # S=1 x B x N
 
         # Get current hidden state from input word and last hidden state
-        rnn_output, hidden = self.lstm(embedded, last_hidden)
+        rnn_output, hidden = self.lstm(embedded, last_hidden) # rnn : [n_layer, batch, dim] hidden : [n_layer, batch, dim]
 
-        s_t = hidden[0][-1].unsqueeze(0)
-        H = s_t.repeat(max_len,1,1).transpose(0,1)
+        s_t = hidden[0][-1].unsqueeze(0) # [1, batch, dim]
+        H = s_t.repeat(max_len,1,1).transpose(0,1) # [batch, T, dim]
 
         energy = F.tanh(self.W1(torch.cat([H,encoder_outputs], 2)))
-        energy = energy.transpose(2,1)
+        energy = energy.transpose(2,1) #[batch, dim, T(max_len)]
         v = self.v.repeat(encoder_outputs.data.shape[0],1).unsqueeze(1) #[B*1*H]
         energy = torch.bmm(v,energy) # [B*1*T]
         a = F.softmax(energy)
-        context = a.bmm(encoder_outputs)
+        context = a.bmm(encoder_outputs) # [B*1*H]
 
         # Attentional vector using the RNN hidden state and context vector
         # concatenated together (Luong eq. 5)

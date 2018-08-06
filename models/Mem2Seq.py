@@ -13,13 +13,10 @@ import numpy as np
 import datetime
 
 from utils.measures import wer, moses_multi_bleu
-import matplotlib
-# matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import seaborn  as sns
-import nltk
 import os
 from sklearn.metrics import f1_score
+
+import nsml
 
 class Mem2Seq(nn.Module):
     def __init__(self, hidden_size, max_len, max_r, lang, path, task, lr, n_layers, dropout, unk_mask):
@@ -244,7 +241,7 @@ class Mem2Seq(nn.Module):
         return decoded_words #, acc_ptr, acc_vac
 
 
-    def evaluate(self,dev,avg_best,BLEU=False):
+    def evaluate(self,dev,avg_best,epoch, BLEU=False):
         logging.info("STARTING EVALUATION")
         acc_avg = 0.0
         wer_avg = 0.0
@@ -258,7 +255,11 @@ class Mem2Seq(nn.Module):
         ref_s = ""
         hyp_s = ""
         dialog_acc_dict = {}
-        pbar = tqdm(enumerate(dev),total=len(dev))
+
+        if nsml.IS_ON_NSML:
+            pbar = tqdm(enumerate(dev), total=len(dev))
+        else:
+            pbar = enumerate(dev)
 
         for j, data_dev in pbar:
             if args['dataset']=='kvr':
@@ -309,10 +310,15 @@ class Mem2Seq(nn.Module):
                         acc+=1
                         dialog_acc_dict[data_dev[-1][i]].append(1)
                     else:
+                        print("Correct:" + str(correct.lstrip().rstrip()))
+                        print("XPredict:" + str(st.lstrip().rstrip()))
                         dialog_acc_dict[data_dev[-1][i]].append(0)
                 else:
                     if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
                         acc+=1
+                    else:
+                        print("Correct:" + str(correct.lstrip().rstrip()))
+                        print("XPredict:" + str(st.lstrip().rstrip()))
                 #    print("Correct:"+str(correct.lstrip().rstrip()))
                 #    print("\tPredict:"+str(st.lstrip().rstrip()))
                 #    print("\tFrom:"+str(self.from_whichs[:,i]))
@@ -325,8 +331,8 @@ class Mem2Seq(nn.Module):
 
             acc_avg += acc/float(len(data_dev[1]))
             wer_avg += w/float(len(data_dev[1]))
-            pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),
-                                                                    wer_avg/float(len(dev))))
+            #pbar.set_description("R:{:.4f},W:{:.4f}".format(acc_avg/float(len(dev)),wer_avg/float(len(dev))))
+
 
         # dialog accuracy
         if args['dataset']=='babi':
@@ -355,8 +361,11 @@ class Mem2Seq(nn.Module):
         else:
             acc_avg = acc_avg/float(len(dev))
             if (acc_avg >= avg_best):
-                self.save_model(str(self.name)+str(acc_avg))
-                logging.info("MODEL SAVED")
+                if nsml.IS_ON_NSML:
+                    nsml.save(epoch)
+                else:
+                    self.save_model(str(self.name) + str(acc_avg))
+                    logging.info("MODEL SAVED")
             return acc_avg
 
 def computeF1(entity,st,correct):

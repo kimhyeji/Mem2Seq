@@ -33,8 +33,8 @@ else:
         print("You need to provide the --dataset information")
 
 # Configure models
+
 directory = args['path'].split("\\")
-print(directory)
 task = directory[-1].split('HDD')[0]
 HDD = directory[-1].split('HDD')[1].split('BSZ')[0]
 L = directory[-1].split('L')[1].split('lr')[0]
@@ -48,7 +48,7 @@ else:
     model = globals()[args['decoder']](
         int(HDD),max_len,max_r,lang,args['path'],task, lr=0.0, n_layers=int(L), dropout=0.0)
 
-acc_test = model.evaluate(test, 1e6, BLEU) 
+acc_test = model.evaluate(test, 1e6, BLEU)
 print(acc_test)
 if testOOV!=[]:
     acc_oov_test = model.evaluate(testOOV,1e6,BLEU) 

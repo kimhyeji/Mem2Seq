@@ -211,7 +211,7 @@ class Mem2Seq(nn.Module):
         return decoded_words
 
 
-    def evaluate(self,dev,avg_best,BLEU=False):
+    def evaluate(self,dev,avg_best,epoch=0,BLEU=False):
         logging.info("STARTING EVALUATION")
         acc_avg = 0.0
         wer_avg = 0.0
@@ -257,8 +257,6 @@ class Mem2Seq(nn.Module):
             self.save_model(str(self.name)+str(bleu_score))
             logging.info("MODEL SAVED")  
         return bleu_score
-
-
 
 class EncoderMemNN(nn.Module):
     def __init__(self, vocab, embedding_dim, hop, dropout):

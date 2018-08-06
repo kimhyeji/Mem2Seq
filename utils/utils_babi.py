@@ -1,20 +1,11 @@
-import json
-import torch
 import torch.utils.data as data
-import unicodedata
-import string
-import re
-import random
-import time
-import math
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
-from torch import optim
-import torch.nn.functional as F
 from utils.config import *
 import logging 
-import datetime
+
+import nsml
+
 
 class Lang:
     def __init__(self):
@@ -200,14 +191,21 @@ def get_seq(pairs,lang,batch_size,type,max_len):
     return data_loader
 
 def prepare_data_seq(task,batch_size=100,shuffle=True):
-    file_train = 'data/dialog-bAbI-tasks/dialog-babi-task{}trn.txt'.format(task)
-    file_dev = 'data/dialog-bAbI-tasks/dialog-babi-task{}dev.txt'.format(task)
-    file_test = 'data/dialog-bAbI-tasks/dialog-babi-task{}tst.txt'.format(task)
+    if nsml.IS_ON_NSML:
+        file_loc = os.path.join(nsml.DATASET_PATH,'train')
+    else:
+        file_loc = os.path.join('data', 'dialog-bAbI-tasks')
+    file_train = os.path.join(file_loc,'dialog-babi-task{}trn.txt'.format(task))
+    file_dev = os.path.join(file_loc,'dialog-babi-task{}dev.txt'.format(task))
+    file_test = os.path.join(file_loc,'dialog-babi-task{}tst.txt'.format(task))
+
     if (int(task) != 6):
-        file_test_OOV = 'data/dialog-bAbI-tasks/dialog-babi-task{}tst-OOV.txt'.format(task)
+        file_test_OOV = os.path.join(file_loc,'dialog-babi-task{}tst-OOV.txt'.format(task))
+
     pair_train,max_len_train, max_r_train = read_langs(file_train, max_line=None)
     pair_dev,max_len_dev, max_r_dev = read_langs(file_dev, max_line=None)
     pair_test,max_len_test, max_r_test = read_langs(file_test, max_line=None)
+
     max_r_test_OOV = 0
     max_len_test_OOV = 0
     if (int(task) != 6):

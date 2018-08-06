@@ -13,7 +13,8 @@ from torch.autograd import Variable
 from torch import optim
 import torch.nn.functional as F
 from utils.config import *
-import logging 
+import logging
+import nsml
 import datetime
 
 class Lang:
@@ -297,14 +298,18 @@ def candid2DL(candid_path, kb_path, task_id):
 
 
 def prepare_data_seq(task,batch_size=100,shuffle=True):
-    file_train = 'data/dialog-bAbI-tasks/dialog-babi-task{}trn.txt'.format(task)
-    file_dev = 'data/dialog-bAbI-tasks/dialog-babi-task{}dev.txt'.format(task)
-    file_test = 'data/dialog-bAbI-tasks/dialog-babi-task{}tst.txt'.format(task)
+    if nsml.IS_ON_NSML:
+        file_loc = os.path.join(nsml.DATASET_PATH,'train')
+    else:
+        file_loc = os.path.join('data','dialog-bAbI-tasks')
+    file_train = os.path.join(file_loc,'dialog-babi-task{}trn.txt'.format(task))
+    file_dev = os.path.join(file_loc,'dialog-babi-task{}dev.txt'.format(task))
+    file_test = os.path.join(file_loc,'dialog-babi-task{}tst.txt'.format(task))
     if (int(task) != 6):
-        file_test_OOV = 'data/dialog-bAbI-tasks/dialog-babi-task{}tst-OOV.txt'.format(task)
+        file_test_OOV = os.path.join(file_loc,'dialog-babi-task{}tst-OOV.txt'.format(task))
 
-    ent = entityList('data/dialog-bAbI-tasks/dialog-babi-kb-all.txt',int(task))
-    can, ind2cand = candid2DL('data/dialog-bAbI-tasks/dialog-babi-candidates.txt', 'data/dialog-bAbI-tasks/dialog-babi-kb-all.txt', int(task))
+    ent = entityList(os.path.join(file_loc,'dialog-babi-kb-all.txt',int(task)))
+    can, ind2cand = candid2DL(os.path.join(file_loc,'dialog-babi-candidates.txt'), os.path.join(file_loc,'dialog-babi-kb-all.txt', int(task)))
     pair_train,max_len_train, max_r_train = read_langs(file_train,ent, can, ind2cand ,max_line=None)
     pair_dev,max_len_dev, max_r_dev = read_langs(file_dev,ent, can, ind2cand ,max_line=None)
     pair_test,max_len_test, max_r_test = read_langs(file_test, ent,can, ind2cand ,max_line=None)
