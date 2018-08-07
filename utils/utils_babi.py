@@ -202,6 +202,8 @@ def prepare_data_seq(task,batch_size=100,shuffle=True):
     if (int(task) != 6):
         file_test_OOV = os.path.join(file_loc,'dialog-babi-task{}tst-OOV.txt'.format(task))
 
+
+
     pair_train,max_len_train, max_r_train = read_langs(file_train, max_line=None)
     pair_dev,max_len_dev, max_r_dev = read_langs(file_dev, max_line=None)
     pair_test,max_len_test, max_r_test = read_langs(file_test, max_line=None)

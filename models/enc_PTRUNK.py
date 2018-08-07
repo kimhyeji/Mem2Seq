@@ -245,7 +245,6 @@ class PTRUNK(nn.Module):
             pbar = enumerate(dev)
         else:
             pbar = tqdm(enumerate(dev),total=len(dev))
-        print_num = 5
         for j, data_dev in pbar: 
             words = self.evaluate_batch(len(data_dev[1]),data_dev[0],data_dev[1],data_dev[2],data_dev[3],data_dev[4],data_dev[5],data_dev[6])            
             acc=0
@@ -281,10 +280,9 @@ class PTRUNK(nn.Module):
                 if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
                     acc+=1
                 else:
-                    if print_num > 0:
+                    if epoch >= 39:
                         print("Correct:"+str(correct.lstrip().rstrip()))
                         print("X\tPredict:"+str(st.lstrip().rstrip()))
-                        print_num -= 1
 
                 w += wer(correct.lstrip().rstrip(),st.lstrip().rstrip())
                 ref.append(str(correct.lstrip().rstrip()))
@@ -315,7 +313,7 @@ class PTRUNK(nn.Module):
             logging.info("ACC : {}".format(str(acc_avg)))
             if (acc_avg >= avg_best):
                 if nsml.IS_ON_NSML:
-                    nsml.save(epoch)
+                    pass
                 else:
                     self.save_model(str(self.name) + str(acc_avg))
                     logging.info("MODEL SAVED")
@@ -338,7 +336,7 @@ class EncoderRNN(nn.Module):
         self.dropout = dropout       
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.embedding_dropout = nn.Dropout(dropout) 
-        self.cell = nn.GRU(hidden_size, hidden_size, n_layers, dropout=self.dropout)
+        self.cell = nn.LSTM(hidden_size, hidden_size, n_layers, dropout=self.dropout)
         if USE_CUDA:
             self.cell = self.cell.cuda()
             self.embedding_dropout = self.embedding_dropout.cuda()
@@ -413,6 +411,8 @@ class PtrDecoderRNN(nn.Module):
 
         energy = F.tanh(self.W1(torch.cat([H,encoder_outputs], 2)))
         energy = energy.transpose(2,1)
+
+        # NORMALIZATION
         v = self.v.repeat(encoder_outputs.data.shape[0],1).unsqueeze(1) #[B*1*H]
         p_ptr = torch.bmm(v,energy) # [B*1*T]
         

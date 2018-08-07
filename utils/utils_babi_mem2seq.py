@@ -180,7 +180,7 @@ def read_langs(file_name, entity, max_line = None):
                         if ENTPTR: 
                             if (key in entity):
                                 index = [loc for loc, val in enumerate(contex_arr) if (val[0] == key)]
-                                if (index):
+                                if index:
                                     index = max(index)
                                     gate.append(1)
                                     cnt_ptr +=1

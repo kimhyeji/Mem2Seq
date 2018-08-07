@@ -21,7 +21,7 @@ else:
         print("You need to provide the --dataset information")
 
 def bind_model(model, **kwargs):
-    def save(filename, *args):
+    def save(filename):
         # save the model with 'checkpoint' dictionary.
         checkpoint = {
             'model': model.state_dict()
@@ -48,4 +48,4 @@ def bind_model(model, **kwargs):
         return (acc_test, acc_oov_test)
 
     # function in function is just used to divide the namespace.
-    nsml.bind(save, load, infer)
+    nsml.bind(save=save, load=load, infer=infer)

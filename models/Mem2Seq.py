@@ -310,8 +310,9 @@ class Mem2Seq(nn.Module):
                         acc+=1
                         dialog_acc_dict[data_dev[-1][i]].append(1)
                     else:
-                        print("Correct:" + str(correct.lstrip().rstrip()))
-                        print("XPredict:" + str(st.lstrip().rstrip()))
+                        if epoch >= 39:
+                            print("Correct:" + str(correct.lstrip().rstrip()))
+                            print("XPredict:" + str(st.lstrip().rstrip()))
                         dialog_acc_dict[data_dev[-1][i]].append(0)
                 else:
                     if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
