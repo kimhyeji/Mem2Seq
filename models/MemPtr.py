@@ -14,10 +14,10 @@ from sklearn.metrics import f1_score
 import math
 import nsml
 
-class PTRUNK(nn.Module):
+class MemPtr(nn.Module):
     def __init__(self,hidden_size,max_len,max_r,lang,path,task,lr,n_layers, dropout):
-        super(PTRUNK, self).__init__()
-        self.name = "PTRUNK"
+        super(MemPtr, self).__init__()
+        self.name = "MemPtr"
         self.task = task
         self.input_size = lang.n_words
         self.output_size = lang.n_words
@@ -240,6 +240,8 @@ class PTRUNK(nn.Module):
         ref = []
         hyp = []
         pred = []
+        ref_s = ""
+        hyp_s = ""
         if nsml.IS_ON_NSML:
             pbar = enumerate(dev)
         else:
@@ -285,6 +287,8 @@ class PTRUNK(nn.Module):
                 w += wer(correct.lstrip().rstrip(),st.lstrip().rstrip())
                 ref.append(str(correct.lstrip().rstrip()))
                 hyp.append(str(st.lstrip().rstrip()))
+                ref_s+=str(correct.lstrip().rstrip())+ "\n"
+                hyp_s+=str(st.lstrip().rstrip()) + "\n"
 
             acc_avg += acc/float(len(data_dev[1]))
             wer_avg += w/float(len(data_dev[1]))
@@ -313,11 +317,9 @@ class PTRUNK(nn.Module):
                 else:
                     self.save_model(str(self.name) + str(acc_avg))
                     logging.info("MODEL SAVED")
-            '''
             if acc_avg > 0.33:
                 for i in range(len(pred)):
                     print("{} {} {}".format(pred[i], ref[i], hyp[i]))
-            '''
             return acc_avg
 
 def computeF1(entity,st,correct):

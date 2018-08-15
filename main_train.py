@@ -6,7 +6,6 @@ from utils.config import *
 from models.enc_vanilla import *
 from models.enc_Luong import *
 from models.enc_PTRUNK import *
-from models.MemN2N import *
 from models.Mem2Seq import *
 
 import nsml
@@ -36,13 +35,13 @@ else:
 # Configure models
 avg_best,cnt,acc = 0.0,0,0.0
 cnt_1 = 0
-epoch_total = 40
+epoch_total = 100
 
 for i in range(5):
-    args['drop'] = random.randint(0,4)*0.1
-    args['hidden'] = random.randint(64,512)
-    args['batch'] = random.randint(6,64)
-
+    #args['drop'] =  random.randint(15,65)*0.01
+    #args['hidden'] = random.randint(64,256)
+    #args['batch'] = random.randint(16,64)
+    #print(args['drop'],args['hidden'],args['batch'])
     ### LOAD DATA
     train, dev, test, testOOV, lang, max_len, max_r = prepare_data_seq(args['task'],batch_size=int(args['batch']),shuffle=True)
     best = {}
@@ -87,14 +86,14 @@ for i in range(5):
                             len(data[1]),10.0,0.5,i==0)
 
         if((epoch+1) % int(args['evalp']) == 0):
-            acc = model.evaluate(dev,avg_best, epoch, BLEU)
+            #acc = model.evaluate(dev,avg_best, epoch, BLEU)
             acc_test = model.evaluate(test, 1e6, BLEU)
 
             if args['task'] != 6:
                 acc_oov_test = model.evaluate(testOOV, 1e6, epoch, BLEU)
-                print("ACC-DEV,TEST,OOV {} {} {}".format(str(acc),str(acc_test),str(acc_oov_test)))
+                print("ACC-DEV,TEST,OOV {} {}".format(str(acc_test),str(acc_oov_test)))
             else:
-                print("ACC-DEV,TEST {} {}".format(str(acc), str(acc_test)))
+                print("ACC-DEV,TEST {}".format(str(acc_test)))
 
             if 'Mem2Seq' in args['decoder']:
                 model.scheduler.step(acc)
@@ -109,16 +108,27 @@ for i in range(5):
                 cnt+=1
             if nsml.IS_ON_NSML:
                 print(epoch, epoch_total, model.loss, acc, acc_test, (epoch+1)/int(args['evalp']))
-                nsml.report(
-                    epoch=epoch,
-                    epoch_total=epoch_total,
-                    train__loss=model.loss,
-                    train__acc=int(acc),
-                    test__acc=int(acc_test),
-                    step=int((epoch+1)/int(args['evalp']))
-                )
+                try:
+                    nsml.report(
+                        epoch=epoch,
+                        epoch_total=epoch_total,
+                        train__loss=model.loss,
+                        train__acc=acc*100,
+                        test__acc=acc_test*100,
+                        step=int((epoch+1)/int(args['evalp']))
+                    )
+                except:
+                    nsml.report(
+                        epoch=epoch,
+                        epoch_total=epoch_total,
+                        train__loss=model.loss.item(),
+                        train__acc=acc * 100,
+                        test__acc=acc_test * 100,
+                        step=int((epoch + 1) / int(args['evalp']))
+                    )
 
-            if(acc_test == 1.0): break
+            if(acc_test == 1.0) or acc_test < 0.2: break
+            if epoch > 40 and acc_test < 0.3: break
             nsml.save(epoch)
 
         #Print

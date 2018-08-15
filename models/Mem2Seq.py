@@ -252,6 +252,7 @@ class Mem2Seq(nn.Module):
         microF1_TRUE,microF1_TRUE_cal,microF1_TRUE_nav,microF1_TRUE_wet = [],[],[],[]
         ref = []
         hyp = []
+        pred = []
         ref_s = ""
         hyp_s = ""
         dialog_acc_dict = {}
@@ -308,12 +309,9 @@ class Mem2Seq(nn.Module):
                         dialog_acc_dict[data_dev[-1][i]] = []
                     if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
                         acc+=1
-                        dialog_acc_dict[data_dev[-1][i]].append(1)
+                        pred.append("O")
                     else:
-                        if epoch >= 39:
-                            print("Correct:" + str(correct.lstrip().rstrip()))
-                            print("XPredict:" + str(st.lstrip().rstrip()))
-                        dialog_acc_dict[data_dev[-1][i]].append(0)
+                        pred.append("X")
                 else:
                     if (correct.lstrip().rstrip() == st.lstrip().rstrip()):
                         acc+=1
@@ -367,6 +365,9 @@ class Mem2Seq(nn.Module):
                 else:
                     self.save_model(str(self.name) + str(acc_avg))
                     logging.info("MODEL SAVED")
+            if acc_avg > 0.4:
+                for i in range(len(pred)):
+                    print("{} {}\n{}".format(pred[i], ref[i], hyp[i]))
             return acc_avg
 
 def computeF1(entity,st,correct):

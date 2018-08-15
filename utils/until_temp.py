@@ -22,7 +22,7 @@ class Lang:
         self.word2index = {}
         self.word2count = {}
         self.index2word = {UNK_token: 'UNK', PAD_token: "PAD", EOS_token: "EOS",  SOS_token: "SOS"}
-        self.n_words = 4# Count default tokens
+        self.n_words = 4 # Count default tokens
       
     def index_words(self, sentence):
         for word in sentence.split(' '):

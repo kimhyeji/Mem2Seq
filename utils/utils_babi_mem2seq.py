@@ -167,6 +167,8 @@ def read_langs(file_name, entity, max_line = None):
                 nid, line = line.split(' ', 1)
                 if '\t' in line:
                     u, r = line.split('\t')
+                    u = u.strip()
+                    r = r.strip()
                     if u!='<SILENCE>': user_counter += 1
                     system_counter += 1
 
@@ -221,7 +223,7 @@ def read_langs(file_name, entity, max_line = None):
                     time_counter += 1
                 else:
                     KB_counter += 1
-                    r=line
+                    r=line.strip()
                     if USEKB:
                         contex_arr += generate_memory(r, "", "")  
             else:

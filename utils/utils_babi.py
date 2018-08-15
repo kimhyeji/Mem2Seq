@@ -2,7 +2,9 @@ import torch.utils.data as data
 import torch
 from torch.autograd import Variable
 from utils.config import *
-import logging 
+import logging
+from utils.until_temp import entityList
+from numpy.random import choice
 
 import nsml
 
@@ -112,14 +114,20 @@ def collate_fn(data):
         gete_s = gete_s.cuda()
     return src_seqs, src_lengths, trg_seqs, trg_lengths, ind_seqs, gete_s, src_plain, trg_plain
 
+def generate_memory(sent):
+    sent_token = sent.split(' ')
+    if sent_token[1]=="R_rating":
+        sent_token = sent_token[::-1]
+    else:
+        sent_token = sent_token
+    sent_new = " ".join(sent_token)
+    return sent_new
 
-def read_langs(file_name, max_line = None):
+def read_langs(file_name, entity=None, drop_out=0.6 ,max_line = None):
     logging.info(("Reading lines from {}".format(file_name)))
     # Read the file and split into lines
     data=[]
     context=""
-    u=None
-    r=None
     with open(file_name) as fin:
         cnt_ptr = 0
         cnt_voc = 0
@@ -131,13 +139,21 @@ def read_langs(file_name, max_line = None):
                 nid, line = line.split(' ', 1)
                 if '\t' in line:
                     u, r = line.split('\t')
-                    context += str(u)+" " 
+                    u = u.strip()
+                    r = r.strip()
+                    context += str(u)+" "
                     contex_arr = context.split(' ')[LIMIT:]
                     r_index = []
                     gate = []
                     for key in r.split(' '):
+                        ####
+                        if entity is not None:
+                            if key in entity and choice([0, 1], p=[1 - drop_out, drop_out]):
+                                r = r.replace(key, "UNK")
+                                context = context.replace(key, "UNK")
+                        ####
                         index = [loc for loc, val in enumerate(contex_arr) if val == key]
-                        if (index):
+                        if index:
                             index = max(index)
                             gate.append(1)
                             cnt_ptr +=1
@@ -146,15 +162,15 @@ def read_langs(file_name, max_line = None):
                             gate.append(0)  
                             cnt_voc +=1             
                         r_index.append(index)
-
+                    contex_arr = context.split(' ')[LIMIT:] ####
                     if len(r_index) > max_r_len: 
                         max_r_len = len(r_index)
                     data.append([" ".join(contex_arr)+"$$$$",r,r_index,gate])
-                    context+=str(r)+" " 
+                    context+=str(r)+" "
                 else:
                     r=line
                     if USEKB:
-                        context+=str(r)+" "                    
+                        context+=generate_memory(str(r))+" "
             else:
                 cnt_lin+=1
                 if(max_line and cnt_lin>=max_line):
@@ -190,7 +206,7 @@ def get_seq(pairs,lang,batch_size,type,max_len):
                                               collate_fn=collate_fn)
     return data_loader
 
-def prepare_data_seq(task,batch_size=100,shuffle=True):
+def prepare_data_seq(task,batch_size=100, drop_out=0.3, shuffle=True):
     if nsml.IS_ON_NSML:
         file_loc = os.path.join(nsml.DATASET_PATH,'train')
     else:
@@ -202,9 +218,12 @@ def prepare_data_seq(task,batch_size=100,shuffle=True):
     if (int(task) != 6):
         file_test_OOV = os.path.join(file_loc,'dialog-babi-task{}tst-OOV.txt'.format(task))
 
+    if int(task) != 6:
+        ent = entityList(os.path.join(file_loc, 'dialog-babi-kb-all.txt'), int(task))
+    else:
+        ent = entityList(os.path.join(file_loc, 'dialog-babi-task6-dstc2-kb.txt'), int(task))
 
-
-    pair_train,max_len_train, max_r_train = read_langs(file_train, max_line=None)
+    pair_train,max_len_train, max_r_train = read_langs(file_train, ent, drop_out, max_line=None)
     pair_dev,max_len_dev, max_r_dev = read_langs(file_dev, max_line=None)
     pair_test,max_len_test, max_r_test = read_langs(file_test, max_line=None)
 
@@ -220,7 +239,7 @@ def prepare_data_seq(task,batch_size=100,shuffle=True):
     train = get_seq(pair_train,lang,batch_size,True,max_len)
     dev   = get_seq(pair_dev,lang,batch_size,False,max_len)
     test  = get_seq(pair_test,lang,batch_size,False,max_len)
-    if (int(task) != 6):
+    if int(task) != 6:
         testOOV = get_seq(pair_test_OOV,lang,batch_size,False,max_len)
     else:
         testOOV = []
