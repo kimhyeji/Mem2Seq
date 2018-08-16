@@ -94,7 +94,7 @@ class MemPtr(nn.Module):
       
         # Prepare input and output variables
         decoder_input = Variable(torch.LongTensor([SOS_token] * batch_size))
-        decoder_hidden = (encoder_hidden[0][:self.decoder.n_layers],encoder_hidden[1][:self.decoder.n_layers])
+        decoder_hidden = encoder_hidden[:self.decoder.n_layers]
         
         max_target_length = max(target_lengths)
         all_decoder_outputs_vocab = Variable(torch.zeros(max_target_length, batch_size, self.output_size))
@@ -174,7 +174,7 @@ class MemPtr(nn.Module):
         encoder_outputs, encoder_hidden = self.encoder(input_batches, input_lengths, None)
         # Prepare input and output variables
         decoder_input = Variable(torch.LongTensor([SOS_token] * batch_size))
-        decoder_hidden = (encoder_hidden[0][:self.decoder.n_layers],encoder_hidden[1][:self.decoder.n_layers])
+        decoder_hidden = encoder_hidden[:self.decoder.n_layers]
 
         decoded_words = []
         all_decoder_outputs_vocab = Variable(torch.zeros(self.max_r, batch_size, self.decoder.output_size))
@@ -331,15 +331,16 @@ def computeF1(entity,st,correct):
     return y_true,y_pred
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, n_layers=1, dropout=0.1):
+    def __init__(self, input_size, hidden_size, n_layers=1, dropout=0.1, bidirectional=True):
         super(EncoderRNN, self).__init__()      
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.dropout = dropout       
         self.embedding = nn.Embedding(input_size, hidden_size)
-        self.embedding_dropout = nn.Dropout(dropout) 
-        self.cell = nn.LSTM(hidden_size, hidden_size, n_layers, dropout=self.dropout)
+        self.embedding_dropout = nn.Dropout(dropout)
+        self.num_directions = 2 if bidirectional else 1
+        self.cell = nn.GRU(hidden_size, hidden_size, n_layers, dropout=self.dropout, bidirectional=bidirectional)
         if USE_CUDA:
             self.cell = self.cell.cuda()
             self.embedding_dropout = self.embedding_dropout.cuda()
@@ -348,12 +349,12 @@ class EncoderRNN(nn.Module):
     def get_state(self, input):
         """Get cell states and hidden states."""
         batch_size = input.size(1)
-        c0_encoder = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))  
-        h0_encoder = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size)) ### * self.num_directions = 2 if bi
+        h0_encoder = Variable(torch.zeros(self.n_layers * self.num_directions, batch_size, self.hidden_size))  ### * self.num_directions = 2 if bi
+        #c0_encoder = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if USE_CUDA:
             h0_encoder = h0_encoder.cuda()
-            c0_encoder = c0_encoder.cuda() 
-        return (h0_encoder, c0_encoder)
+            #c0_encoder = c0_encoder.cuda()
+        return h0_encoder
 
     def forward(self, input_seqs, input_lengths, hidden=None):
         # Note: we run this all at once (over multiple batches of multiple sequences)
@@ -366,26 +367,27 @@ class EncoderRNN(nn.Module):
         outputs, hidden = self.cell(embedded, hidden)
         if input_lengths:
             outputs, _ = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=False)   # Max_S * B * H
-        
+        hidden = hidden.view(self.n_layers, self.num_directions, input_seqs.size(1), self.hidden_size)
+        hidden  = torch.cat([hidden[:,0,:,:],hidden[:,1,:,:]], dim=-1)
         return outputs, hidden
 
 class PtrDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, n_layers=1, dropout=0.1):
+    def __init__(self, hidden_size, output_size, n_layers=1, dropout=0.1, num_directions=2):
         super(PtrDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = output_size ### Vocab size
         self.n_layers = n_layers
         self.dropout = dropout
-        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.embedding = nn.Embedding(output_size, num_directions * hidden_size)
         self.embedding_dropout = nn.Dropout(dropout)
-        self.cell = nn.LSTM(2*hidden_size, hidden_size, n_layers, dropout=dropout)
-        self.W1 = nn.Linear(2*hidden_size, hidden_size)
+        self.cell = nn.GRU(2 * num_directions * hidden_size, num_directions * hidden_size, n_layers, dropout=dropout)
+        self.W1 = nn.Linear(2 * num_directions * hidden_size, hidden_size)
         v = torch.rand(hidden_size)
         stdv = 1. / math.sqrt(v.size(0))
         v = v.data.normal_(mean=0, std=stdv)
         self.concat = nn.Linear(hidden_size * 2, hidden_size)  
-        self.U = nn.Linear(hidden_size, output_size)
-        self.W = nn.Linear(hidden_size, 1)
+        self.U = nn.Linear(num_directions * hidden_size, output_size)
+        self.W = nn.Linear(num_directions * hidden_size, 1)
 
         if USE_CUDA:
             self.embedding = self.embedding.cuda()
@@ -409,10 +411,9 @@ class PtrDecoderRNN(nn.Module):
         word_embedded = self.embedding_dropout(word_embedded)
 
         ## ATTENTION CALCULATION 
-        s_t = last_hidden[0][-1].unsqueeze(0)
+        s_t = last_hidden[-1].unsqueeze(0)
         H = s_t.repeat(max_len,1,1).transpose(0,1) # B * MaxS * H
-
-        energy = F.tanh(self.W1(torch.cat([H,encoder_outputs], 2))) # B *  MaxS * H
+        energy = F.tanh(self.W1(torch.cat([H,encoder_outputs], 2))) # B * MaxS * H
         energy = energy.transpose(2,1) # B * H * MaxS
 
         # NORMALIZATION
@@ -430,6 +431,6 @@ class PtrDecoderRNN(nn.Module):
     
         p_vacab = self.U(output) # 1 * B * output_size
         
-        gate = F.sigmoid(self.W(hidden[0][-1])) # B * 1
+        gate = F.sigmoid(self.W(hidden[-1])) # B * 1
 
         return p_ptr,p_vacab,gate,hidden

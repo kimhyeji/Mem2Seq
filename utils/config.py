@@ -17,7 +17,7 @@ MAX_LENGTH = 10
 parser = argparse.ArgumentParser(description='Seq_TO_Seq Dialogue bAbI')
 parser.add_argument('-ds','--dataset', help='dataset, babi or kvr', required=False, default='babi')
 parser.add_argument('-t','--task', help='Task Number', required=False, default=3)
-parser.add_argument('-dec','--decoder', help='decoder model', required=False, default="PTRUNK") #PTRUNK / LuongSeqToSeq / VanillaSeqToSeq
+parser.add_argument('-dec','--decoder', help='decoder model', required=False, default="MemPtr") #PTRUNK / LuongSeqToSeq / VanillaSeqToSeq
 parser.add_argument('-hdd','--hidden', help='Hidden size', required=False, default="128")
 parser.add_argument('-bsz','--batch', help='Batch_size', required=False, default="32")
 parser.add_argument('-lr','--learn', help='Learning Rate', required=False, default="0.001")

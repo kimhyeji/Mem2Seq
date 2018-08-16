@@ -7,6 +7,7 @@ from models.enc_vanilla import *
 from models.enc_Luong import *
 from models.enc_PTRUNK import *
 from models.Mem2Seq import *
+from models.MemPtr import *
 
 import nsml
 
