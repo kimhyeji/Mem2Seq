@@ -381,7 +381,8 @@ class PtrDecoderRNN(nn.Module):
         self.embedding = nn.Embedding(output_size, num_directions * hidden_size)
         self.embedding_dropout = nn.Dropout(dropout)
         self.cell = nn.GRU(2 * num_directions * hidden_size, num_directions * hidden_size, n_layers, dropout=dropout)
-        self.W1 = nn.Linear(2 * num_directions * hidden_size, hidden_size)
+        self.W1 = nn.Linear(num_directions * hidden_size, hidden_size)
+        self.W2 = nn.Linear(num_directions * hidden_size, hidden_size)
         v = torch.rand(hidden_size)
         stdv = 1. / math.sqrt(v.size(0))
         v = v.data.normal_(mean=0, std=stdv)
@@ -413,7 +414,7 @@ class PtrDecoderRNN(nn.Module):
         ## ATTENTION CALCULATION 
         s_t = last_hidden[-1].unsqueeze(0)
         H = s_t.repeat(max_len,1,1).transpose(0,1) # B * MaxS * H
-        energy = F.tanh(self.W1(torch.cat([H,encoder_outputs], 2))) # B * MaxS * H
+        energy = F.tanh(self.W1(H) + self.W2(encoder_outputs)) # B * MaxS * H
         energy = energy.transpose(2,1) # B * H * MaxS
 
         # NORMALIZATION
